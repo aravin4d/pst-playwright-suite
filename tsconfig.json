@@ -6,8 +6,8 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "noEmit": true,
+    "types": ["node"]
   },
-  "include": ["**/*.ts"],
-  "exclude": ["node_modules", "allure-results", "allure-report", "playwright-report", "test-results"]
+  "include": ["src", "tests", "playwright.config.ts"]
 }

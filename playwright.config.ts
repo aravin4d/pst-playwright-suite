@@ -1,21 +1,24 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const BASE_URL = process.env.BASE_URL ?? 'https://practicesoftwaretesting.com';
+const onCI = !!process.env.CI;
 
-// The setup project logs in once and saves the session. Browser projects depend on it,
-// so logged-in tests start from a saved session instead of logging in each time.
 export default defineConfig({
   testDir: './tests',
   fullyParallel: true,
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 4 : undefined,
+  forbidOnly: onCI,
+  // The target is a shared public demo site, so a retry on CI absorbs the odd slow response.
+  // Locally there are no retries: a flaky test should fail in my face.
+  retries: onCI ? 1 : 0,
+  // Keep the load on the demo site polite.
+  workers: onCI ? 2 : 3,
   timeout: 60_000,
   expect: { timeout: 10_000 },
-  reporter: [['list'], ['allure-playwright', { outputFolder: 'allure-results' }]],
+  reporter: onCI
+    ? [['list'], ['html', { open: 'never' }], ['github']]
+    : [['list'], ['html', { open: 'never' }]],
+
   use: {
-    baseURL: BASE_URL,
-    // The live site uses data-test attributes, so getByTestId() reads them directly.
+    baseURL: process.env.BASE_URL || 'https://practicesoftwaretesting.com',
     testIdAttribute: 'data-test',
     actionTimeout: 15_000,
     navigationTimeout: 30_000,
@@ -23,32 +26,35 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
   },
+
   projects: [
-    { name: 'setup', testMatch: /auth\.setup\.ts/ },
+    {
+      name: 'api',
+      testMatch: /tests\/api\/.*\.spec\.ts/,
+    },
     {
       name: 'chromium',
+      testIgnore: /tests\/api\//,
+      grepInvert: /@mobile/,
       use: { ...devices['Desktop Chrome'] },
-      dependencies: ['setup'],
-      testIgnore: /auth\.setup\.ts/,
     },
     {
       name: 'firefox',
+      testIgnore: /tests\/api\//,
+      grepInvert: /@mobile/,
       use: { ...devices['Desktop Firefox'] },
-      dependencies: ['setup'],
-      testIgnore: /auth\.setup\.ts/,
     },
     {
       name: 'webkit',
+      testIgnore: /tests\/api\//,
+      grepInvert: /@mobile/,
       use: { ...devices['Desktop Safari'] },
-      dependencies: ['setup'],
-      testIgnore: /auth\.setup\.ts/,
     },
     {
-      name: 'mobile-chrome',
-      use: { ...devices['Pixel 7'] },
-      dependencies: ['setup'],
-      testIgnore: /auth\.setup\.ts/,
+      name: 'mobile',
+      testIgnore: /tests\/api\//,
       grep: /@mobile/,
+      use: { ...devices['Pixel 7'] },
     },
   ],
 });

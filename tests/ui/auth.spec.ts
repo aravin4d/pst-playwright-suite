@@ -1,99 +1,113 @@
-import { test, expect } from '../../fixtures';
-import { users, newUser, AUTH_FILE, writesEnabled } from '../../data/testData';
+import { test, expect } from '../../src/fixtures';
 
-test.describe('Authentication', () => {
-  test('@smoke valid customer can log in', async ({ loginPage }) => {
+test.describe('Sign in', () => {
+  test('customer signs in through the form and lands on My account @smoke', async ({
+    loginPage,
+    accountPage,
+    header,
+    customer,
+    page,
+  }) => {
     await loginPage.goto();
-    await loginPage.login(users.customer.email, users.customer.password);
-    await loginPage.expectLoggedIn();
+    await loginPage.signIn(customer.email, customer.password);
+
+    await expect(page).toHaveURL(/\/account$/);
+    await expect(accountPage.title).toHaveText('My account');
+    await expect(header.userMenu).toBeVisible();
+    await expect(header.signIn).toBeHidden();
   });
 
-  test('@regression invalid credentials show "Invalid email or password"', async ({ loginPage, page }) => {
+  test('wrong credentials are rejected without saying which part was wrong', async ({ loginPage, page }) => {
     await loginPage.goto();
-    await loginPage.login(users.invalid.email, users.invalid.password);
-    await expect(loginPage.errorMessage).toHaveText(/invalid email or password/i);
+    // An address that cannot exist, so repeated runs never lock a real account.
+    await loginPage.signIn('nobody@example.invalid', 'not-the-password');
+
+    await expect(loginPage.error).toHaveText('Invalid email or password');
     await expect(page).toHaveURL(/\/auth\/login/);
   });
 
-  test('@regression empty login form does not sign in', async ({ loginPage, page }) => {
+  test('empty form asks for both fields', async ({ loginPage }) => {
     await loginPage.goto();
     await loginPage.submit.click();
-    await expect(page).toHaveURL(/\/auth\/login/);
+
+    await expect(loginPage.emailError).toHaveText('Email is required');
+    await expect(loginPage.passwordError).toHaveText('Password is required');
   });
 
-  test('@regression login page links to register and forgot password', async ({ loginPage }) => {
+  test('malformed email and too-short password are caught before any request is sent', async ({
+    loginPage,
+    page,
+  }) => {
+    let loginCalls = 0;
+    await page.route('**/users/login', (route) => {
+      loginCalls += 1;
+      return route.continue();
+    });
+
     await loginPage.goto();
-    await expect(loginPage.registerLink).toBeVisible();
-    await expect(loginPage.forgotPasswordLink).toBeVisible();
+    await loginPage.signIn('not-an-email', 'x');
+
+    await expect(loginPage.emailError).toHaveText('Email format is invalid');
+    await expect(loginPage.passwordError).toHaveText('Password length is invalid');
+    expect(loginCalls).toBe(0);
   });
 
-  test('@regression password field masks input', async ({ loginPage }) => {
+  test('password is masked and the page links to register and reset', async ({ loginPage }) => {
     await loginPage.goto();
+
     await expect(loginPage.password).toHaveAttribute('type', 'password');
-  });
-
-  test.describe('with a saved session', () => {
-    test.use({ storageState: AUTH_FILE });
-
-    test('@regression saved session is still logged in on a fresh page', async ({ page }) => {
-      await page.goto('/');
-      await expect(page.getByTestId('nav-menu')).toBeVisible();
-    });
-
-    // Signing out can invalidate the shared session, so this test only runs when writes are enabled.
-    test('@regression logged-in user can sign out', async ({ page, accountPage }) => {
-      test.skip(!writesEnabled, 'Signs out the shared demo account. Set PST_ALLOW_WRITES=true to run.');
-      await page.goto('/');
-      await page.getByTestId('nav-menu').click();
-      await accountPage.signOut.click();
-      await expect(page.getByTestId('nav-sign-in')).toBeVisible();
-    });
+    await expect(loginPage.registerLink).toHaveAttribute('href', '/auth/register');
+    await expect(loginPage.forgotPasswordLink).toHaveAttribute('href', '/auth/forgot-password');
   });
 });
 
-test.describe('Registration', () => {
-  test('@regression register page does not submit an empty form', async ({ registerPage, page }) => {
-    await registerPage.goto();
-    await registerPage.submit.click();
-    await expect(page).toHaveURL(/\/auth\/register/);
+test.describe('Account pages are protected', () => {
+  for (const path of ['/account', '/account/profile', '/account/invoices', '/account/favorites']) {
+    test(`${path} sends a signed-out visitor to the login page`, async ({ page, loginPage }) => {
+      await page.goto(path);
+
+      await expect(page).toHaveURL(/\/auth\/login/);
+      await expect(loginPage.submit).toBeVisible();
+    });
+  }
+
+  test('a token the API does not recognise is treated as signed out', async ({ page, baseURL, loginPage }) => {
+    // Simulates a stale or tampered session left in the browser.
+    await page.context().addInitScript(() => localStorage.setItem('auth-token', 'not.a.real.token'));
+
+    await page.goto(`${baseURL}/account/invoices`);
+
+    await expect(page).toHaveURL(/\/auth\/login/);
+    await expect(loginPage.submit).toBeVisible();
+  });
+});
+
+test.describe('Signed-in session', () => {
+  test.use({ asCustomer: true });
+
+  test('a token from the API is enough to be signed in, no login form needed', async ({
+    page,
+    header,
+    accountPage,
+    customer,
+  }) => {
+    await accountPage.goto();
+
+    await expect(accountPage.title).toHaveText('My account');
+    await expect(header.userMenu).toContainText(customer.firstName);
+    await expect(page).toHaveURL(/\/account$/);
   });
 
-  test('@regression registration rejects an already-used email', async ({ registerPage, page }) => {
-    const user = newUser();
-    await registerPage.goto();
-    await registerPage.firstName.fill(user.firstName);
-    await registerPage.lastName.fill(user.lastName);
-    await registerPage.dob.fill(user.dob);
-    await registerPage.country.selectOption({ label: user.country });
-    await registerPage.postalCode.fill(user.postcode);
-    await registerPage.houseNumber.fill(user.houseNumber);
-    await registerPage.street.fill(user.street);
-    await registerPage.city.fill(user.city);
-    await registerPage.state.fill(user.state);
-    await registerPage.phone.fill(user.phone);
-    await registerPage.email.fill(users.customer.email);
-    await registerPage.password.fill(user.password);
-    await registerPage.submit.click();
-    await expect(page).toHaveURL(/\/auth\/register/);
-  });
+  test('signing out clears the session and locks the account pages again', async ({ page, header, loginPage }) => {
+    await page.goto('/account');
+    await header.signOut();
 
-  test('@regression registering a new account completes', async ({ registerPage, page }) => {
-    test.skip(!writesEnabled, 'Creates a real account on the demo site. Set PST_ALLOW_WRITES=true to run.');
-    const user = newUser();
-    await registerPage.goto();
-    await registerPage.firstName.fill(user.firstName);
-    await registerPage.lastName.fill(user.lastName);
-    await registerPage.dob.fill(user.dob);
-    await registerPage.country.selectOption({ label: user.country });
-    await registerPage.postalCode.fill(user.postcode);
-    await registerPage.houseNumber.fill(user.houseNumber);
-    await registerPage.street.fill(user.street);
-    await registerPage.city.fill(user.city);
-    await registerPage.state.fill(user.state);
-    await registerPage.phone.fill(user.phone);
-    await registerPage.email.fill(user.email);
-    await registerPage.password.fill(user.password);
-    await registerPage.submit.click();
-    await expect(page).not.toHaveURL(/\/auth\/register/);
+    await expect(page).toHaveURL(/\/auth\/login/);
+    await expect(header.signIn).toBeVisible();
+    expect(await page.evaluate(() => localStorage.getItem('auth-token'))).toBeNull();
+
+    await page.goto('/account');
+    await expect(page).toHaveURL(/\/auth\/login/);
+    await expect(loginPage.submit).toBeVisible();
   });
 });

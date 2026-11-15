@@ -1,78 +1,68 @@
 name: Playwright tests
 
 on:
-  pull_request:
   push:
     branches: [main]
-  schedule:
-    - cron: '0 2 * * *' # nightly full run
+  pull_request:
   workflow_dispatch:
+    inputs:
+      all_browsers:
+        description: Also run Firefox and WebKit
+        type: boolean
+        default: false
+  schedule:
+    - cron: '30 1 * * 1-5' # weekdays 07:00 IST, full browser matrix
+
+concurrency:
+  group: playwright-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4]
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npx playwright install --with-deps
-      - name: Run smoke on PRs, full suite otherwise
-        env:
-          CI: true
-          PST_USER_EMAIL: ${{ secrets.PST_USER_EMAIL }}
-          PST_USER_PASSWORD: ${{ secrets.PST_USER_PASSWORD }}
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Pick projects
+        id: projects
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            npx playwright test --grep @smoke --shard=${{ matrix.shard }}/4
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.all_browsers }}" = "true" ]; then
+            echo "browsers=chromium firefox webkit" >> "$GITHUB_OUTPUT"
+            echo "args=" >> "$GITHUB_OUTPUT"
           else
-            npx playwright test --shard=${{ matrix.shard }}/4
+            echo "browsers=chromium" >> "$GITHUB_OUTPUT"
+            echo "args=--project=api --project=chromium --project=mobile" >> "$GITHUB_OUTPUT"
           fi
-      - name: Upload Allure results
-        if: always()
+
+      - name: Install browsers
+        run: npx playwright install --with-deps ${{ steps.projects.outputs.browsers }}
+
+      - name: Run tests
+        run: npx playwright test ${{ steps.projects.outputs.args }}
+
+      - name: Upload HTML report
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
-          name: allure-results-${{ matrix.shard }}
-          path: allure-results
+          name: playwright-report
+          path: playwright-report
           retention-days: 14
-      - name: Upload failure artifacts
+
+      - name: Upload traces of failed tests
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-${{ matrix.shard }}
+          name: test-results
           path: test-results
           retention-days: 7
-
-  report:
-    needs: test
-    if: always() && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: allure-results-*
-          path: allure-results
-          merge-multiple: true
-      - name: Generate Allure report
-        run: npx allure generate allure-results --clean -o allure-report
-      - name: Publish to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./allure-report
-          destination_dir: allure
