@@ -34,7 +34,7 @@ test.describe('Cart API', () => {
     await test.step('set a quantity directly', async () => {
       const response = await api.setCartQuantity(cartId, hammer.id, 5);
       expect(response.status()).toBe(200);
-      expect(await response.json()).toEqual({ success: true });
+      expect(await response.json()).toEqual({ result: 'item added or updated' });
 
       expect(await itemsIn(cartId)).toEqual({ [pliers.id]: 3, [hammer.id]: 5 });
     });

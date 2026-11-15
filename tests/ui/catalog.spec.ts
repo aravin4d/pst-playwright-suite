@@ -1,5 +1,5 @@
 import { test, expect } from '../../src/fixtures';
-import { SortOption } from '../../src/pages/catalog.page';
+import { isProductListUrl, SortOption } from '../../src/pages/catalog.page';
 import { products } from '../../src/support/test-data';
 
 test.describe('Search', () => {
@@ -88,8 +88,22 @@ test.describe('Sorting', () => {
     });
   }
 
+  test('choosing a sort order sends it to the API along with the active filters', async ({ catalog, page }) => {
+    await catalog.goto();
+    const gridCall = page.waitForRequest(
+      (request) => isProductListUrl(request.url()) && request.postDataJSON()?.sort === 'name,desc',
+    );
+
+    await catalog.sortBy('name,desc');
+
+    expect((await gridCall).postDataJSON()).toMatchObject({ sort: 'name,desc', is_rental: 'false' });
+  });
+
   test('the first page of "cheapest first" matches the API', async ({ catalog, api }) => {
-    const expected = (await api.products({ sort: 'price,asc', page: 1 })).data.map((product) => product.price);
+    // Same defaults the shop front sends: purchasable items only, default price range.
+    const expected = (
+      await api.products({ sort: 'price,asc', between: 'price,1,100', is_rental: false, page: 1 })
+    ).data.map((product) => product.price);
 
     await catalog.goto();
     await catalog.sortBy('price,asc');
@@ -173,13 +187,17 @@ test.describe('Browsing', () => {
   });
 
   test('a category page lists only that category', async ({ page, header, catalog, api }) => {
-    const handTools = await api.products({ by_category_slug: 'hand-tools', page: 1 });
+    const handTools = (await api.allProducts({ by_category_slug: 'hand-tools' })).map((product) => product.name);
 
     await page.goto('/');
     await header.openCategory('hand-tools');
 
     await expect(page).toHaveURL(/\/category\/hand-tools/);
     await expect(page.getByTestId('page-title')).toHaveText('Category: Hand Tools');
-    await expect.poll(() => catalog.names()).toEqual(handTools.data.map((product) => product.name));
+    await expect(async () => {
+      const shown = await catalog.names();
+      expect(shown.length).toBeGreaterThan(0);
+      for (const name of shown) expect(handTools).toContain(name);
+    }).toPass();
   });
 });

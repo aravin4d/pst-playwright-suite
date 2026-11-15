@@ -88,6 +88,16 @@ export const test = base.extend<Options & Fixtures, WorkerFixtures>({
     });
   },
 
+  // When a UI test fails, put the URL and a text outline of the page in the log.
+  // Most CI failures can be read from that without downloading the trace.
+  page: async ({ page }, use, testInfo) => {
+    await use(page);
+    if (testInfo.status !== testInfo.expectedStatus) {
+      const outline = await page.locator('body').ariaSnapshot({ timeout: 5_000 }).catch(() => '(page not readable)');
+      console.log(`\n--- "${testInfo.title}" ended on ${page.url()}\n${outline.slice(0, 1800)}\n---`);
+    }
+  },
+
   header: async ({ page }, use) => use(new Header(page)),
   catalog: async ({ page }, use) => use(new CatalogPage(page)),
   productPage: async ({ page }, use) => use(new ProductPage(page)),

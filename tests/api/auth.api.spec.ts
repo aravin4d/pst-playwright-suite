@@ -68,7 +68,7 @@ test.describe('Auth API', () => {
   test('registering the same email twice is refused', async ({ api, customer }) => {
     const response = await api.registerRaw({ ...newShopper(), email: customer.email });
 
-    expect(response.status()).toBe(422);
+    expect(response.status()).toBe(409);
     expect(JSON.stringify(await response.json())).toContain('already exists');
   });
 

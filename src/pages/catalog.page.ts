@@ -1,7 +1,18 @@
-import { expect, Locator, Page } from '@playwright/test';
+import { expect, Locator, Page, Response } from '@playwright/test';
 import { escapeRegExp, toNumber } from '../support/test-data';
 
 export type SortOption = 'name,asc' | 'name,desc' | 'price,asc' | 'price,desc';
+
+/**
+ * True for the calls that load the product grid. The shop sends them with the
+ * HTTP QUERY method and a JSON body, so match on the path, not on a query string.
+ */
+export function isProductListUrl(url: string | URL): boolean {
+  return /\/products(\/search)?$/.test(new URL(url).pathname);
+}
+
+const isProductListCall = (response: Response) =>
+  isProductListUrl(response.url()) && response.request().method() !== 'OPTIONS' && response.ok();
 
 /** The home page: product grid with search, sort and filters. */
 export class CatalogPage {
@@ -45,9 +56,7 @@ export class CatalogPage {
    * before returning means callers never read the grid from before the change.
    */
   private async afterGridReload(action: () => Promise<unknown>) {
-    const reloaded = this.page.waitForResponse(
-      (response) => /\/products(\/search)?\?/.test(response.url()) && response.request().method() === 'GET',
-    );
+    const reloaded = this.page.waitForResponse(isProductListCall);
     await action();
     await reloaded;
   }

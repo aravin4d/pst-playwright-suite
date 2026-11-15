@@ -1,4 +1,5 @@
 import { test, expect } from '../../src/fixtures';
+import { isProductListUrl } from '../../src/pages/catalog.page';
 import { newShopper, products, usd } from '../../src/support/test-data';
 
 // Long, cross-page flows. Each one walks the shop the way a real person would,
@@ -120,7 +121,9 @@ test.describe('Shopping journeys', () => {
 
 test.describe('When the backend misbehaves', () => {
   test('a slow product API still ends with a full grid, no fixed waits needed', async ({ page, catalog }) => {
-    await page.route(/\/products\?/, async (route) => {
+    let delayed = 0;
+    await page.route(isProductListUrl, async (route) => {
+      delayed += 1;
       await new Promise((resolve) => setTimeout(resolve, 3_000));
       await route.continue();
     });
@@ -128,12 +131,15 @@ test.describe('When the backend misbehaves', () => {
     await page.goto('/');
 
     await expect(catalog.productNames).toHaveCount(9, { timeout: 20_000 });
+    expect(delayed).toBeGreaterThan(0);
   });
 
   test('a product API outage leaves the rest of the page usable', async ({ page, catalog, header }) => {
-    await page.route(/\/products\?/, (route) => route.abort('failed'));
+    await page.route(isProductListUrl, (route) => route.abort('failed'));
+    const gridCallFailed = page.waitForEvent('requestfailed', (request) => isProductListUrl(request.url()));
 
     await page.goto('/');
+    await gridCallFailed;
 
     await expect(header.signIn).toBeVisible();
     await expect(header.contact).toBeVisible();

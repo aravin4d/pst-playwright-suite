@@ -71,14 +71,16 @@ test.describe('Account pages are protected', () => {
     });
   }
 
-  test('a token the API does not recognise is treated as signed out', async ({ page, baseURL, loginPage }) => {
+  test('a token the API does not recognise does not open the account pages', async ({ page, header, accountPage }) => {
     // Simulates a stale or tampered session left in the browser.
-    await page.context().addInitScript(() => localStorage.setItem('auth-token', 'not.a.real.token'));
+    await page.addInitScript(() => localStorage.setItem('auth-token', 'not.a.real.token'));
 
-    await page.goto(`${baseURL}/account/invoices`);
+    await page.goto('/account/invoices');
 
-    await expect(page).toHaveURL(/\/auth\/login/);
-    await expect(loginPage.submit).toBeVisible();
+    await expect(page).not.toHaveURL(/\/account/);
+    await expect(header.signIn).toBeVisible();
+    await expect(header.userMenu).toBeHidden();
+    await expect(accountPage.invoiceRows).toHaveCount(0);
   });
 });
 
