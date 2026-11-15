@@ -1,4 +1,5 @@
 import { test, expect } from '../../src/fixtures';
+import { arriveAt } from '../../src/support/bot-protection';
 
 test.describe('Sign in', () => {
   test('customer signs in through the form and lands on My account @smoke', async ({
@@ -10,6 +11,7 @@ test.describe('Sign in', () => {
   }) => {
     await loginPage.goto();
     await loginPage.signIn(customer.email, customer.password);
+    await arriveAt(page, accountPage.title);
 
     await expect(page).toHaveURL(/\/account$/);
     await expect(accountPage.title).toHaveText('My account');
@@ -103,6 +105,7 @@ test.describe('Signed-in session', () => {
   test('signing out clears the session and locks the account pages again', async ({ page, header, loginPage }) => {
     await page.goto('/account');
     await header.signOut();
+    await arriveAt(page, loginPage.submit);
 
     await expect(page).toHaveURL(/\/auth\/login/);
     await expect(header.signIn).toBeVisible();

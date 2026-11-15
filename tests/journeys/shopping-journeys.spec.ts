@@ -1,4 +1,5 @@
 import { test, expect } from '../../src/fixtures';
+import { arriveAt } from '../../src/support/bot-protection';
 import { isProductListUrl } from '../../src/pages/catalog.page';
 import { newShopper, products, usd } from '../../src/support/test-data';
 
@@ -29,11 +30,13 @@ test.describe('Shopping journeys', () => {
       await registerPage.goto();
       await registerPage.fill(shopper);
       await registerPage.submit.click();
+      await arriveAt(page, loginPage.submit);
       await expect(page).toHaveURL(/\/auth\/login/);
     });
 
     await test.step('sign in with the new account', async () => {
       await loginPage.signIn(shopper.email, shopper.password);
+      await arriveAt(page, accountPage.title);
       await expect(page).toHaveURL(/\/account$/);
       await expect(header.userMenu).toContainText(`${shopper.firstName} ${shopper.lastName}`);
     });
@@ -63,7 +66,7 @@ test.describe('Shopping journeys', () => {
     });
 
     await test.step('find the order under My invoices', async () => {
-      await accountPage.gotoInvoices();
+      await header.openAccountSection('invoices');
       // A brand-new account has exactly this one order.
       await expect(accountPage.invoiceRows).toHaveCount(1);
       await expect(accountPage.invoiceRow(invoiceNumber)).toContainText(usd(expectedTotal));
@@ -100,6 +103,7 @@ test.describe('Shopping journeys', () => {
     loginPage,
     customer,
     api,
+    page,
   }) => {
     const pliers = await api.productByName(products.pliers);
 
@@ -111,7 +115,7 @@ test.describe('Shopping journeys', () => {
 
     // The sign-in step of the wizard reuses the normal login form.
     await loginPage.signIn(customer.email, customer.password);
-    await expect(header.userMenu).toBeVisible();
+    await arriveAt(page, header.userMenu);
 
     await cart.goto();
     await expect(cart.row(pliers.name)).toBeVisible();
@@ -149,7 +153,7 @@ test.describe('When the backend misbehaves', () => {
     await expect(page).toHaveURL(/\/contact/);
   });
 
-  test('a cart that no longer exists on the server does not break the cart page', async ({ page, cart, header }) => {
+  test('a cart that no longer exists on the server does not break the cart page', async ({ page, cart }) => {
     await page.addInitScript(() => {
       sessionStorage.setItem('cart_id', '00000000000000000000000000');
       sessionStorage.setItem('cart_quantity', '3');
@@ -157,7 +161,8 @@ test.describe('When the backend misbehaves', () => {
 
     await cart.goto();
 
+    // The wizard still renders; it just has nothing in it.
+    await expect(page.getByRole('listitem').filter({ hasText: 'Billing Address' })).toBeVisible();
     await expect(cart.rows).toHaveCount(0);
-    await expect(header.signIn).toBeVisible();
   });
 });

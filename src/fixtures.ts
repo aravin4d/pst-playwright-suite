@@ -1,5 +1,6 @@
 import { test as base, expect } from '@playwright/test';
 import { ApiClient } from './support/api-client';
+import { watchNavigations } from './support/bot-protection';
 import { Account, API_URL } from './support/test-data';
 import { Header } from './pages/header';
 import { CatalogPage } from './pages/catalog.page';
@@ -88,9 +89,12 @@ export const test = base.extend<Options & Fixtures, WorkerFixtures>({
     });
   },
 
-  // When a UI test fails, put the URL and a text outline of the page in the log.
-  // Most CI failures can be read from that without downloading the trace.
+  // Two things every UI test gets: a check for the site's bot-protection page after
+  // each navigation (see bot-protection.ts), and, on failure, the final URL plus a text
+  // outline of the page in the log. Most CI failures can be read from that outline
+  // without downloading the trace.
   page: async ({ page }, use, testInfo) => {
+    watchNavigations(page);
     await use(page);
     if (testInfo.status !== testInfo.expectedStatus) {
       const outline = await page.locator('body').ariaSnapshot({ timeout: 5_000 }).catch(() => '(page not readable)');

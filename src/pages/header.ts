@@ -38,6 +38,12 @@ export class Header {
     await this.page.getByTestId(`lang-${code}`).click();
   }
 
+  /** Uses the menu links, which switch pages inside the app without a full reload. */
+  async openAccountSection(section: 'account' | 'favorites' | 'profile' | 'invoices' | 'messages') {
+    await this.userMenu.click();
+    await this.page.getByTestId(`nav-my-${section}`).click();
+  }
+
   async signOut() {
     await this.userMenu.click();
     await this.page.getByTestId('nav-sign-out').click();

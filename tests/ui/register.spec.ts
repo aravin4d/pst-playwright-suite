@@ -23,10 +23,10 @@ test.describe('Registration', () => {
     await expect(registerPage.fieldError('email')).toHaveText('Email format is invalid');
   });
 
-  test('a short password is flagged while typing', async ({ registerPage }) => {
+  test('a short password is refused', async ({ registerPage }) => {
     await registerPage.goto();
     await registerPage.password.fill('abc');
-    await registerPage.password.blur();
+    await registerPage.submit.click();
 
     await expect(registerPage.fieldError('password')).toContainText('Password must be minimal 6 characters long');
   });

@@ -38,7 +38,8 @@ export class CatalogPage {
     this.noResults = page.getByTestId('no-results');
     this.sort = page.getByTestId('sort');
     this.ecoOnly = page.getByTestId('eco-friendly-filter');
-    this.filtersToggle = page.getByTestId('filters');
+    // The toggle button and the panel it opens share a test id, so go by role.
+    this.filtersToggle = page.getByRole('button', { name: 'Filters' });
     this.maxPriceHandle = page.getByRole('slider', { name: 'ngx-slider-max' });
     this.productNames = page.getByTestId('product-name');
     this.productPrices = page.getByTestId('product-price');

@@ -33,7 +33,7 @@ test.describe('Contact form', () => {
   });
 
   test('offers the expected subjects', async ({ contactPage }) => {
-    const options = await contactPage.subject.locator('option').allInnerTexts();
+    const options = await contactPage.subject.locator('option').allTextContents();
 
     expect(options.map((option) => option.trim()).slice(1)).toEqual([
       'Customer service',
