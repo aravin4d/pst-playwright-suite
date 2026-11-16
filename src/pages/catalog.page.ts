@@ -84,21 +84,33 @@ export class CatalogPage {
   }
 
   /**
-   * Moves the upper price handle down to `target` dollars with the keyboard, one
-   * dollar per key press, and waits for the grid to be fetched with that ceiling.
+   * Moves the upper price handle down to `target` dollars with the keyboard and waits
+   * for the grid to be fetched with that ceiling. Page Down moves ten dollars at a time
+   * and the left arrow one; every move makes the shop re-fetch the grid, so fewer,
+   * bigger steps keep this quick on slower browsers.
    */
   async setMaxPrice(target: number) {
     const fetchedWithCeiling = this.page.waitForResponse(
       (response) =>
         isProductListCall(response) &&
         String(response.request().postDataJSON()?.between ?? '').endsWith(`,${target}`),
+      { timeout: 45_000 },
     );
 
     await this.maxPriceHandle.focus();
-    const current = async () => Number(await this.maxPriceHandle.getAttribute('aria-valuenow'));
-    for (let presses = 0; presses < 200 && (await current()) > target; presses++) {
-      await this.page.keyboard.press('ArrowLeft');
+    const read = async () => Number(await this.maxPriceHandle.getAttribute('aria-valuenow'));
+    let value = await read();
+    let bigSteps = true;
+
+    for (let presses = 0; presses < 150 && value > target; presses++) {
+      const useBigStep = bigSteps && value - target >= 10;
+      await this.page.keyboard.press(useBigStep ? 'PageDown' : 'ArrowLeft');
+      const next = await read();
+      // If Page Down did not move the handle down, fall back to single steps.
+      if (useBigStep && next >= value) bigSteps = false;
+      value = next;
     }
+
     await expect(this.maxPriceHandle).toHaveAttribute('aria-valuenow', String(target));
     await fetchedWithCeiling;
   }

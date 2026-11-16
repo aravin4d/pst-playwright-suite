@@ -14,7 +14,8 @@ on:
     - cron: '30 1 * * 1-5' # weekdays 07:00 IST, full browser matrix
 
 concurrency:
-  group: playwright-${{ github.ref }}
+  # Per trigger, so a manual or scheduled run never cancels the run for a push.
+  group: playwright-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
