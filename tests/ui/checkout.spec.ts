@@ -160,6 +160,8 @@ test.describe('Checkout as a guest', () => {
         route.fulfill({ status: 201, json: { id: 'stub', invoice_number: 'INV-STUB-0043', total: 0 } }),
       );
       const order = page.waitForRequest((request) => request.url().endsWith('/invoices/guest'));
+      // Read the cart id now: the shop forgets it as soon as the order is placed.
+      const cartId = await page.evaluate(() => sessionStorage.getItem('cart_id'));
 
       await checkout.choosePayment('Cash on Delivery');
       await checkout.placeOrder();
@@ -173,7 +175,8 @@ test.describe('Checkout as a guest', () => {
         guest_first_name: guest.firstName,
         guest_last_name: guest.lastName,
       });
-      expect(body.cart_id).toBe(await page.evaluate(() => sessionStorage.getItem('cart_id')));
+      expect(cartId).toBeTruthy();
+      expect(body.cart_id).toBe(cartId);
       expect(body.billing_street).not.toBe('');
     });
   });
