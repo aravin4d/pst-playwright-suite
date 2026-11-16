@@ -33,9 +33,8 @@ test.describe('Contact form', () => {
   });
 
   test('offers the expected subjects', async ({ contactPage }) => {
-    const options = await contactPage.subject.locator('option').allTextContents();
-
-    expect(options.map((option) => option.trim()).slice(1)).toEqual([
+    await expect(contactPage.subject.locator('option')).toHaveText([
+      'Select a subject *',
       'Customer service',
       'Webmaster',
       'Return',

@@ -62,13 +62,17 @@ test.describe('Checkout as a guest', () => {
 
   test('lookup sends the country, postcode and house number that were typed', async ({ checkout, page }) => {
     await checkout.continueAsGuest(guest);
-    const lookup = page.waitForRequest((request) => request.url().includes('/postcode-lookup'));
+    // The shop may fire a lookup while the form is still half filled, so wait for
+    // the one made with the complete address instead of whichever comes first.
+    const lookup = page.waitForRequest((request) => {
+      const url = new URL(request.url());
+      return url.pathname.endsWith('/postcode-lookup') && url.searchParams.get('house_number') === billingAddress.houseNumber;
+    });
     await checkout.fillBillingAddress();
 
     const query = new URL((await lookup).url()).searchParams;
     expect(query.get('country')).toBe(billingAddress.country);
     expect(query.get('postcode')).toBe(billingAddress.postcode);
-    expect(query.get('house_number')).toBe(billingAddress.houseNumber);
   });
 
   test.describe('payment step', () => {

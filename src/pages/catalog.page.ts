@@ -83,13 +83,24 @@ export class CatalogPage {
     await this.afterGridReload(() => this.ecoOnly.check());
   }
 
-  /** Drags the upper price handle down with the keyboard; one arrow press is one dollar. */
-  async lowerMaxPriceBy(dollars: number): Promise<number> {
+  /**
+   * Moves the upper price handle down to `target` dollars with the keyboard, one
+   * dollar per key press, and waits for the grid to be fetched with that ceiling.
+   */
+  async setMaxPrice(target: number) {
+    const fetchedWithCeiling = this.page.waitForResponse(
+      (response) =>
+        isProductListCall(response) &&
+        String(response.request().postDataJSON()?.between ?? '').endsWith(`,${target}`),
+    );
+
     await this.maxPriceHandle.focus();
-    await this.afterGridReload(async () => {
-      for (let i = 0; i < dollars; i++) await this.page.keyboard.press('ArrowLeft');
-    });
-    return Number(await this.maxPriceHandle.getAttribute('aria-valuenow'));
+    const current = async () => Number(await this.maxPriceHandle.getAttribute('aria-valuenow'));
+    for (let presses = 0; presses < 200 && (await current()) > target; presses++) {
+      await this.page.keyboard.press('ArrowLeft');
+    }
+    await expect(this.maxPriceHandle).toHaveAttribute('aria-valuenow', String(target));
+    await fetchedWithCeiling;
   }
 
   async goToPage(number: number) {

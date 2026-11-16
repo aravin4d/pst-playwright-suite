@@ -138,8 +138,8 @@ test.describe('Filters', () => {
   });
 
   test('lowering the price ceiling hides everything above it', async ({ catalog }) => {
-    const ceiling = await catalog.lowerMaxPriceBy(80);
-    expect(ceiling).toBe(20);
+    const ceiling = 20;
+    await catalog.setMaxPrice(ceiling);
 
     await expect(async () => {
       const prices = await catalog.prices();
