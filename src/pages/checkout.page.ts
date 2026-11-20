@@ -1,4 +1,4 @@
-import { expect, Locator, Page, Request } from '@playwright/test';
+import { expect, Locator, Page, Request, Response } from '@playwright/test';
 import { Address, billingAddress } from '../support/test-data';
 
 export type PaymentMethod =
@@ -36,7 +36,26 @@ export class CheckoutPage {
   readonly paymentError: Locator;
   readonly orderConfirmation: Locator;
 
+  private lookupsStarted = 0;
+  private lookupsInFlight = 0;
+  private lastLookup?: Response;
+
   constructor(private readonly page: Page) {
+    const isLookup = (request: Request) => request.url().includes('/postcode-lookup');
+    page.on('request', (request) => {
+      if (!isLookup(request)) return;
+      this.lookupsStarted += 1;
+      this.lookupsInFlight += 1;
+    });
+    page.on('requestfinished', async (request) => {
+      if (!isLookup(request)) return;
+      this.lastLookup = (await request.response()) ?? this.lastLookup;
+      this.lookupsInFlight -= 1;
+    });
+    page.on('requestfailed', (request) => {
+      if (isLookup(request)) this.lookupsInFlight -= 1;
+    });
+
     this.alreadySignedIn = page.getByText('you are already logged in');
     this.proceedSignedIn = page.getByTestId('proceed-2');
     this.guestTab = page.getByRole('tab', { name: 'Continue as Guest' });
@@ -77,43 +96,31 @@ export class CheckoutPage {
 
   /**
    * Types country, postcode and house number, then waits for the shop's postcode
-   * lookup to finish and fill in street, city and state.
+   * lookup to settle and checks street, city and state hold what it returned.
    *
-   * Two traps here. The lookup overwrites street and city when it lands, and the order
-   * API rejects an address that doesn't match it, so tests never type those fields
-   * first. And "the street field has a value" is not proof the lookup is done: in
-   * failed CI runs the field was already filled before either lookup answered (the
-   * shop fires two per address), the test typed its own city, and the lookup then
-   * overwrote it. So this waits for every lookup request to answer, then checks the
-   * fields hold what the last one returned.
+   * The lookup is easy to race. For a signed-in customer the shop prefills the saved
+   * address and fires two lookups as soon as the checkout page loads; typing the same
+   * values again fires nothing. If a test types into the street or city while those
+   * are still in flight, the response lands afterwards and silently overwrites it.
+   * (That is exactly how "the API refuses an order whose address was changed" once
+   * placed a real order.) So lookups are tracked from the moment this page object is
+   * created, and this method returns only when none are in flight.
    */
   async fillBillingAddress(address: Address = billingAddress) {
-    const lookups: Request[] = [];
-    const track = (request: Request) => {
-      if (request.url().includes('/postcode-lookup')) lookups.push(request);
-    };
-    this.page.on('request', track);
+    await this.country.selectOption(address.country);
+    await this.postcode.fill(address.postcode);
+    await this.houseNumber.fill(address.houseNumber);
 
-    try {
-      await this.country.selectOption(address.country);
-      await this.postcode.fill(address.postcode);
-      await this.houseNumber.fill(address.houseNumber);
+    await expect
+      .poll(() => this.lookupsStarted > 0 && this.lookupsInFlight === 0, {
+        message: 'postcode lookup did not run, or did not finish',
+      })
+      .toBe(true);
 
-      await expect.poll(() => lookups.length, { message: 'postcode lookup was not called' }).toBeGreaterThan(0);
-      // Wait for everything sent so far, and again if more went out while we waited.
-      let settled = 0;
-      while (settled < lookups.length) {
-        settled = lookups.length;
-        await Promise.all(lookups.map((request) => request.response()));
-      }
-
-      const answer = await (await lookups[lookups.length - 1].response())?.json();
-      await expect(this.street).toHaveValue(answer.street);
-      await expect(this.city).toHaveValue(answer.city);
-      await expect(this.proceedToPayment).toBeEnabled();
-    } finally {
-      this.page.off('request', track);
-    }
+    const answer = await this.lastLookup!.json();
+    await expect(this.street).toHaveValue(answer.street);
+    await expect(this.city).toHaveValue(answer.city);
+    await expect(this.proceedToPayment).toBeEnabled();
   }
 
   async choosePayment(method: PaymentMethod) {
