@@ -4,6 +4,8 @@ const onCI = !!process.env.CI;
 
 export default defineConfig({
   testDir: './tests',
+  // Waits for the demo API to be responsive before the first test (see the file for why).
+  globalSetup: './src/support/wait-for-api.ts',
   fullyParallel: true,
   forbidOnly: onCI,
   // The target is a shared public demo site, so a retry on CI absorbs the odd slow response.
